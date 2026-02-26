@@ -8,6 +8,20 @@ const route = useRoute()
 // 当前选中的菜单
 const activeMenu = computed(() => route.path)
 
+// 菜单数据
+interface MenuItem {
+  label: string
+  path: string
+}
+
+const menus: MenuItem[] = [
+  { label: "首页", path: "/" },
+  { label: "划卡消费", path: "/consume" },
+  { label: "添加会员", path: "/add-member" },
+  { label: "会员列表", path: "/member-list" },
+  { label: "关于", path: "/about" },
+]
+
 // 点击菜单跳转
 const handleSelect = (index: string) => {
   router.push(index)
@@ -22,28 +36,18 @@ const handleSelect = (index: string) => {
         :default-active="activeMenu"
         class="el-menu-vertical"
         @select="handleSelect">
-        <el-menu-item index="/">
-          <span>首页</span>
+        <el-menu-item
+          v-for="item in menus"
+          :key="item.path"
+          :index="item.path">
+          <span>{{ item.label }}</span>
         </el-menu-item>
-
-        <el-menu-item index="/about">
-          <span>关于</span>
-        </el-menu-item>
-
-        <el-menu-item index="/member-list">
-          <span>会员列表</span>
-        </el-menu-item>
-
-        <el-menu-item index="/consume">
-          <span>划卡消费</span>
-        </el-menu-item>
-
       </el-menu>
     </el-aside>
 
     <!-- 主内容区 -->
     <el-container>
-      <el-header style="text-align: center;  font-size: 38px">
+      <el-header style="text-align: center; font-size: 38px">
         Tauri + Vue3 后台系统
       </el-header>
 

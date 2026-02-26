@@ -1,119 +1,157 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import { searchMembersByPhone } from "../db/useDatabase"
-import { ElMessage } from "element-plus"
+import { onMounted, ref, computed } from "vue"
+import { ElMessage, ElMessageBox } from "element-plus"
+
+import { MEMBER_TYPE, type Member } from "../types/member"
+import { db, consume, initDb } from "../db/useDatabase"
 
 const keyword = ref("")
-const members = ref<any[]>([])
-const loading = ref(false)
+const member = ref<Member | null>(null)
+
+const price = computed(() => {
+  if (!member.value) return 0
+  return member.value.type === MEMBER_TYPE.SAVING ? 30 : 20
+})
 
 async function handleSearch() {
+  if (!db) {
+    ElMessage.error("数据库未初始化")
+    return
+  }
+
   if (!keyword.value.trim()) {
     ElMessage.warning("请输入手机号")
     return
   }
 
-  loading.value = true
+  const result = await db.select<Member[]>(
+    "SELECT * FROM members WHERE phone = ? LIMIT 1",
+    [keyword.value.trim()]
+  )
 
-  const result = await searchMembersByPhone(keyword.value.trim())
-  members.value = result
+  if (result.length === 0) {
+    member.value = null
+    ElMessage.error("未找到该会员")
+    return
+  }
 
-  loading.value = false
+  member.value = result[0]
+}
 
-  if (!members.value.length) {
-    ElMessage.warning("未找到会员")
+async function handleConsume() {
+  if (!member.value) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确认扣除 ${price.value} 元？`,
+      "确认消费",
+      { type: "warning" }
+    )
+
+    await consume(member.value.id)
+
+    ElMessage.success(`扣除 ${price.value} 元成功`)
+
+    await handleSearch() // 刷新余额
+  } catch (err: any) {
+    if (err !== "cancel") {
+      ElMessage.error(err.message || "消费失败")
+    }
   }
 }
 
-function handleReset() {
-  keyword.value = ""
-  members.value = []
-}
+onMounted(async () => {
+  await initDb()
+})
 </script>
 
 <template>
-  <div class="container">
-    <el-card shadow="hover">
+  <div class="consume-wrapper">
+    <el-card class="consume-card" shadow="always">
       <template #header>
-        <span>划卡消费</span>
+        <div class="header-title">会员消费</div>
       </template>
 
-      <!-- 查询区域 -->
       <div class="search-box">
-        <el-input v-model="keyword" placeholder="请输入手机号" clearable @keyup.enter="handleSearch" style="width: 300px" />
+        <el-input v-model="keyword" placeholder="请输入手机号" clearable style="width: 300px" @keyup.enter="handleSearch" />
 
         <el-button type="primary" @click="handleSearch">
           查询
         </el-button>
-
-        <el-button @click="handleReset">
-          清空
-        </el-button>
       </div>
 
-      <!-- 会员卡片区域 -->
-      <div v-loading="loading" class="card-container">
-        <template v-if="members.length">
-          <el-card
-            v-for="item in members"
-            :key="item.id"
-            class="member-card"
-            shadow="hover">
-            <div class="member-info">
-              <div class="name">{{ item.name }}</div>
-              <div class="phone">{{ item.phone }}</div>
-              <el-tag type="success" size="large">
-                {{ item.level || "普通会员" }}
-              </el-tag>
-            </div>
-          </el-card>
-        </template>
+      <div v-if="member" class="member-card">
+        <el-card shadow="hover">
+          <h2>{{ member.name }}</h2>
+          <p>手机号：{{ member.phone }}</p>
 
-        <el-empty v-else description="请输入手机号查询会员" style="margin-top: 40px" />
+          <p>
+            类型：
+            <el-tag v-if="member.type === MEMBER_TYPE.SAVING">
+              储值卡（30/次）
+            </el-tag>
+            <el-tag type="success" v-else>
+              会员卡（20/次）
+            </el-tag>
+          </p>
+
+          <!-- 两种都显示余额 -->
+          <p>
+            当前余额：
+            <strong style="color: #f56c6c">
+              ￥{{ member.balance.toFixed(2) }}
+            </strong>
+          </p>
+
+          <el-button type="danger" size="large" @click="handleConsume">
+            消费一次（{{ price }}元）
+          </el-button>
+        </el-card>
       </div>
+
+      <el-empty v-else description="请输入手机号查询会员" />
     </el-card>
   </div>
 </template>
 
+
+
 <style scoped>
-.container {
-  padding: 40px;
+.consume-wrapper {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f5f7fa;
+}
+
+.consume-card {
+  width: 500px;
+  border-radius: 12px;
+}
+
+.header-title {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .search-box {
   display: flex;
+  justify-content: center;
   gap: 10px;
-  align-items: center;
+  margin-bottom: 30px;
 }
 
-/* 两列布局 */
-.card-container {
-  margin-top: 40px;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
-
-/* 单个卡片 */
 .member-card {
-  padding: 25px;
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.member-card .el-card {
+  width: 100%;
   text-align: center;
-  transition: all 0.2s ease;
-}
-
-.member-card:hover {
-  transform: translateY(-3px);
-}
-
-.member-info .name {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 8px;
-}
-
-.member-info .phone {
-  font-size: 16px;
-  margin-bottom: 10px;
-  color: #666;
+  border-radius: 12px;
 }
 </style>

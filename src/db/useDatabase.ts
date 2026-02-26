@@ -1,209 +1,274 @@
 import Database from "@tauri-apps/plugin-sql"
 import { appDataDir, join } from "@tauri-apps/api/path"
-let db: Database | null = null
-import { save } from "@tauri-apps/plugin-dialog"
-import { writeTextFile } from "@tauri-apps/plugin-fs"
-import { open } from "@tauri-apps/plugin-dialog"
-import { readTextFile } from "@tauri-apps/plugin-fs"
-import Papa from "papaparse"
 
-interface ImportResult {
-  success: number
-  failed: number
-  duplicated: number
+import {
+  MEMBER_TYPE,
+  Member,
+  MemberType,
+  CreateMemberDTO,
+  UpdateMemberDTO,
+} from "../types/member"
+
+export let db: Database | null = null
+
+// 类型定义
+export interface MemberRecord {
+  id: number
+  member_id: number
+  amount: number
+  created_at: string
 }
 
 // 初始化数据库
 export async function initDb() {
   const appDataDirPath = await appDataDir()
   const fullPath = await join(appDataDirPath, "members.db")
-  console.log("数据库文件在:", fullPath)
+  console.log("数据库文件路径在:", fullPath)
 
   db = await Database.load("sqlite:members.db")
 
-  // 创建表
+  // 会员表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS members (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      phone TEXT,
-      level TEXT
+      phone TEXT NOT NULL UNIQUE,
+      type INTEGER NOT NULL,
+      balance REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
+  `)
+
+  // 消费记录表
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS member_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(member_id) REFERENCES members(id)
+    )
+  `)
+
+  // 索引优化
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_phone ON members(phone)
   `)
 }
 
-// 获取所有会员
-export async function getAllMembers(): Promise<any[]> {
+// 全部查询
+export async function getAllMembers(): Promise<Member[]> {
   if (!db) throw new Error("Database not initialized")
-  const result = await db.select("SELECT * FROM members")
-  return result as any[] // 或者更严格的类型
+  const result = await db.select<Member[]>(
+    "SELECT * FROM members ORDER BY id DESC"
+  )
+  return result
 }
 
-// 分页获取会员
 export async function getMembersWithPagination(
   page: number,
   pageSize: number
-): Promise<any[]> {
+): Promise<Member[]> {
   if (!db) throw new Error("Database not initialized")
   const offset = (page - 1) * pageSize
-  const result = await db.select("SELECT * FROM members LIMIT ? OFFSET ?", [
-    pageSize,
-    offset,
-  ])
-  return result as any[] // 或者更严格的类型
+
+  const result = await db.select<Member[]>(
+    "SELECT * FROM members ORDER BY id DESC LIMIT ? OFFSET ?",
+    [pageSize, offset]
+  )
+
+  return result
 }
 
-// 获取总数量
 export async function getMemberCount(): Promise<number> {
   if (!db) throw new Error("Database not initialized")
+
   const result = await db.select<{ count: number }[]>(
     "SELECT COUNT(*) as count FROM members"
   )
-  return result[0].count as number
+
+  return result[0]?.count ?? 0
 }
 
-// 根据手机号模糊查询
-export async function searchMembersByPhone(keyword: string): Promise<any[]> {
+// 分页模糊搜索
+export async function searchMembersByPhone(
+  keyword: string,
+  page: number,
+  pageSize: number
+): Promise<Member[]> {
   if (!db) throw new Error("Database not initialized")
 
-  const result = await db.select(
-    "SELECT * FROM members WHERE phone LIKE ? ORDER BY id DESC",
+  const offset = (page - 1) * pageSize
+
+  return await db.select<Member[]>(
+    `
+    SELECT * FROM members
+    WHERE phone LIKE ?
+    ORDER BY id DESC
+    LIMIT ? OFFSET ?
+    `,
+    [`%${keyword}%`, pageSize, offset]
+  )
+}
+
+// 模糊搜索总数
+export async function searchMemberCount(keyword: string): Promise<number> {
+  if (!db) throw new Error("Database not initialized")
+
+  const result = await db.select<{ count: number }[]>(
+    `
+    SELECT COUNT(*) as count
+    FROM members
+    WHERE phone LIKE ?
+    `,
     [`%${keyword}%`]
   )
 
-  return result as any[]
+  return result[0]?.count ?? 0
 }
 
-// 添加会员
-export async function addMember(name: string, phone: string, level: string) {
+// 会员类型统计
+export async function getMemberTypeCount(type: number): Promise<number> {
   if (!db) throw new Error("Database not initialized")
+
+  const result = await db.select<{ count: number }[]>(
+    "SELECT COUNT(*) as count FROM members WHERE type = ?",
+    [type]
+  )
+
+  return result[0]?.count ?? 0
+}
+
+// 总余额查询
+export async function getTotalBalance(): Promise<number> {
+  if (!db) throw new Error("Database not initialized")
+
+  const result = await db.select<{ total: number }[]>(
+    "SELECT SUM(balance) as total FROM members"
+  )
+
+  return result[0]?.total ?? 0
+}
+
+// 今日新增会员
+export async function getTodayNewMembers(): Promise<number> {
+  if (!db) throw new Error("Database not initialized")
+
+  const result = await db.select<{ count: number }[]>(
+    `
+    SELECT COUNT(*) as count
+    FROM members
+    WHERE DATE(created_at) = DATE('now')
+    `
+  )
+
+  return result[0]?.count ?? 0
+}
+
+// 会员 CRUD
+export async function addMember(data: CreateMemberDTO) {
+  if (!db) throw new Error("Database not initialized")
+
+  const { name, phone, type, balance = 0 } = data
+
   await db.execute(
-    "INSERT INTO members (name, phone, level) VALUES (?, ?, ?)",
-    [name, phone, level]
+    "INSERT INTO members (name, phone, type, balance) VALUES (?, ?, ?, ?)",
+    [name, phone, type, balance]
   )
 }
 
-// 更新会员
-export async function updateMember(
-  id: number,
-  name: string,
-  phone: string,
-  level: string
-) {
+export async function updateMember(data: UpdateMemberDTO) {
   if (!db) throw new Error("Database not initialized")
+
+  const { id, name, phone, type, balance = 0 } = data
+
   await db.execute(
-    "UPDATE members SET name = ?, phone = ?, level = ? WHERE id = ?",
-    [name, phone, level, id]
+    "UPDATE members SET name = ?, phone = ?, type = ?, balance = ? WHERE id = ?",
+    [name, phone, type, balance, id]
   )
 }
 
-// 删除会员
 export async function deleteMember(id: number) {
   if (!db) throw new Error("Database not initialized")
-  await db.execute("DELETE FROM members WHERE id = ?", [id])
-}
 
-// 删除所有会员
-export async function deleteAllMembers() {
-  if (!db) throw new Error("Database not initialized")
-  await db.execute("DELETE FROM members")
-}
-
-// 导出为 CSV
-export async function exportMembersASCSV() {
-  try {
-    const members = await getAllMembers()
-    const csvContent = members
-      .map((m) => `${m.name},${m.phone},${m.level}`)
-      .join("\n")
-
-    const filePath = await save({
-      filters: [{ name: "CSV", extensions: ["csv"] }],
-      defaultPath: "members.csv",
-    })
-
-    if (filePath) {
-      await writeTextFile(filePath, csvContent)
-      return true
-    }
-    return false
-  } catch (e) {
-    console.error("导出失败:", e)
-    return false
-  }
-}
-
-// 导入 CSV
-export async function importMembersCSV(): Promise<ImportResult> {
-  if (!db) throw new Error("Database not initialized")
-
-  const result: ImportResult = { success: 0, failed: 0, duplicated: 0 }
-
-  // 1. 文件选择与读取 (省略部分重复代码...)
-  const filePath = await open({
-    filters: [{ name: "CSV", extensions: ["csv"] }],
-  })
-  if (!filePath || Array.isArray(filePath)) return result
-  let content = await readTextFile(filePath as string)
-  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1)
-
-  // 2. 解析 CSV
-  const parsed = Papa.parse(content, { header: true, skipEmptyLines: true })
-  const rows = parsed.data as any[]
-  if (!rows.length) return result
-
-  // 3. 开始处理数据
-  // 内存去重：处理 CSV 内部重复的电话
-  const seenInCsv = new Set<string>()
-
-  // 开启事务保证性能（批量操作建议开启，否则每行都会写磁盘）
   await db.execute("BEGIN")
 
   try {
-    for (const row of rows) {
-      const name = row.name?.trim()
-      const phone = row.phone?.trim()
-      const level = row.level?.trim()
+    await db.execute("DELETE FROM member_records WHERE member_id = ?", [id])
 
-      // 基础验证：如果没名字或没电话，算失败
-      if (!name || !phone) {
-        result.failed++
-        continue
-      }
+    await db.execute("DELETE FROM members WHERE id = ?", [id])
 
-      // A. 检查当前 CSV 文件内部是否已经处理过这个电话
-      if (seenInCsv.has(phone)) {
-        result.duplicated++
-        continue
-      }
-      seenInCsv.add(phone)
-
-      // B. 查询数据库：判断该 phone 是否已存在
-      const existing = (await db.select(
-        "SELECT id FROM members WHERE phone = ? LIMIT 1",
-        [phone]
-      )) as any[]
-
-      if (existing.length > 0) {
-        // 如果数据库里已经有了
-        result.duplicated++
-        continue
-      }
-
-      // C. 执行插入
-      await db.execute(
-        "INSERT INTO members (name, phone, level) VALUES (?, ?, ?)",
-        [name, phone, level]
-      )
-      result.success++
-    }
-
-    // await db.execute("COMMIT")
+    await db.execute("COMMIT")
   } catch (err) {
     await db.execute("ROLLBACK")
-    console.error("导入出错:", err)
     throw err
   }
+}
 
-  return result
+export async function deleteAllMembers() {
+  if (!db) throw new Error("Database not initialized")
+
+  await db.execute("BEGIN")
+
+  try {
+    // 先删消费记录
+    await db.execute("DELETE FROM member_records")
+
+    // 再删会员
+    await db.execute("DELETE FROM members")
+
+    await db.execute("COMMIT")
+  } catch (err) {
+    await db.execute("ROLLBACK")
+    throw err
+  }
+}
+// 消费逻辑
+function getPriceByType(type: MemberType): number {
+  switch (type) {
+    case MEMBER_TYPE.SAVING:
+      return 30
+    case MEMBER_TYPE.VIP:
+      return 20
+  }
+}
+
+export async function consume(memberId: number) {
+  if (!db) throw new Error("Database not initialized")
+
+  await db.execute("BEGIN")
+
+  try {
+    const member = (
+      await db.select<Member[]>("SELECT * FROM members WHERE id = ? LIMIT 1", [
+        memberId,
+      ])
+    )[0]
+
+    if (!member) throw new Error("会员不存在")
+
+    // 根据类型决定价格
+    const price = getPriceByType(member.type)
+
+    if (member.balance < price) {
+      throw new Error("余额不足")
+    }
+
+    // ✅ 所有类型都扣余额
+    await db.execute("UPDATE members SET balance = balance - ? WHERE id = ?", [
+      price,
+      memberId,
+    ])
+
+    // 写消费记录
+    await db.execute(
+      "INSERT INTO member_records (member_id, amount) VALUES (?, ?)",
+      [memberId, price]
+    )
+
+    await db.execute("COMMIT")
+  } catch (err) {
+    await db.execute("ROLLBACK")
+    throw err
+  }
 }

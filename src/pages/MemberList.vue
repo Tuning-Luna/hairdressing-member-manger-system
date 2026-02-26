@@ -1,214 +1,216 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue"
+import { ElMessageBox, ElMessage } from "element-plus"
+
 import {
-  initDb,
   getMembersWithPagination,
   getMemberCount,
-  addMember,
+  searchMembersByPhone,
+  searchMemberCount,
   deleteMember,
-  exportMembersASCSV,
-  importMembersCSV,
   deleteAllMembers,
+  initDb,
 } from "../db/useDatabase"
 
-import { ElMessage, ElMessageBox } from "element-plus"
+import { importMembersCSV, exportMembersAsCSV } from "../utils/csv"
 
-const members = ref<any[]>([])
+
+import { Member, MEMBER_TYPE } from "../types/member"
+
+const tableData = ref<Member[]>([])
 const total = ref(0)
-
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = 10
 
-const newName = ref("")
-const newPhone = ref("")
-const newLevel = ref("")
+const searchKeyword = ref("")
+const multipleSelection = ref<Member[]>([])
 
-// 加载分页数据
-async function load() {
-  members.value = await getMembersWithPagination(
-    currentPage.value,
-    pageSize.value
-  )
-  total.value = await getMemberCount()
+// 加载数据
+async function loadData() {
+  const keyword = searchKeyword.value.trim()
+
+  if (keyword) {
+    tableData.value = await searchMembersByPhone(
+      keyword,
+      currentPage.value,
+      pageSize
+    )
+    total.value = await searchMemberCount(keyword)
+  } else {
+    tableData.value = await getMembersWithPagination(
+      currentPage.value,
+      pageSize
+    )
+    total.value = await getMemberCount()
+  }
 }
 
-// 切换页码
-async function handlePageChange(page: number) {
-  currentPage.value = page
-  await load()
-}
-
-// 切换每页条数
-async function handleSizeChange(size: number) {
-  pageSize.value = size
+// 搜索
+async function handleSearch() {
   currentPage.value = 1
-  await load()
+  await loadData()
 }
 
-// 添加
-async function addNew() {
-  if (!newName.value || !newPhone.value) {
-    ElMessage.warning("姓名和电话不能为空")
-    return
+// 复选框选择
+function handleSelectionChange(val: Member[]) {
+  multipleSelection.value = val
+}
+
+// 删除单个
+async function handleDelete(id: number) {
+  await ElMessageBox.confirm("确认删除该会员？", "提示", {
+    type: "warning",
+  })
+
+  await deleteMember(id)
+  ElMessage.success("删除成功")
+  loadData()
+}
+
+// 批量删除
+async function handleBatchDelete() {
+  await ElMessageBox.confirm("确认批量删除选中会员？", "提示", {
+    type: "warning",
+  })
+
+  for (const item of multipleSelection.value) {
+    await deleteMember(item.id)
   }
 
-  // 去掉首尾空格
-  newName.value = newName.value.trim()
-  newPhone.value = newPhone.value.trim()
+  ElMessage.success("批量删除成功")
+  loadData()
+}
 
-  await addMember(newName.value, newPhone.value, newLevel.value)
+// 全部删除
+async function handleDeleteAll() {
+  await ElMessageBox.confirm("确认删除所有会员？", "严重警告", {
+    type: "error",
+  })
 
-  newName.value = ""
-  newPhone.value = ""
-  newLevel.value = ""
+  await deleteAllMembers()
+  ElMessage.success("全部删除成功")
+  loadData()
+}
 
-  ElMessage.success("添加成功")
-
+async function handleReset() {
+  searchKeyword.value = ""
   currentPage.value = 1
-  await load()
-}
-
-// 删除
-async function deleteOne(id: number) {
-  try {
-    await ElMessageBox.confirm("确定删除该会员吗？", "提示", {
-      type: "warning",
-    })
-
-    await deleteMember(id)
-    ElMessage.success("删除成功")
-
-    await load()
-  } catch { }
-}
-
-// 删除全部
-async function deleteAll() {
-  try {
-    await ElMessageBox.confirm("确定删除所有会员吗？", "危险操作", {
-      type: "error",
-    })
-
-    await deleteAllMembers()
-    ElMessage.success("全部删除成功")
-
-    currentPage.value = 1
-    await load()
-  } catch { }
-}
-
-// 导出
-async function exportCSV() {
-  const res = await exportMembersASCSV()
-  res ? ElMessage.success("导出成功") : ElMessage.error("导出失败")
+  await loadData()
 }
 
 // 导入
-async function importJson() {
-  const res = await importMembersCSV()
-  if (res) {
-    ElMessage.success(
-      `导入成功${res.success}条，失败${res.failed}条，重复${res.duplicated}条`
-    )
-    await load()
-  } else {
-    ElMessage.error("导入失败")
-  }
+async function handleImport() {
+  const result = await importMembersCSV()
+
+  ElMessage.success(
+    `导入完成：成功 ${result.success} 条，失败 ${result.failed} 条，重复 ${result.duplicated} 条`
+  )
+
+  loadData()
+}
+
+// 导出
+async function handleExport() {
+  const ok = await exportMembersAsCSV()
+  if (ok) ElMessage.success("导出成功")
 }
 
 onMounted(async () => {
   await initDb()
-  await load()
+  await loadData()
 })
 </script>
 
+
 <template>
-  <div class="container">
-    <el-card shadow="hover">
-      <template #header>
+  <div class="member-container">
+    <!-- 顶部操作栏 -->
+    <div class="toolbar">
+      <el-input
+        v-model="searchKeyword"
+        placeholder="输入手机号搜索"
+        clearable
+        style="width: 220px"
+        @clear="handleSearch">
+        <template #append>
+          <el-button @click="handleSearch">搜索</el-button>
+        </template>
+        <el-button @click="handleReset">重置</el-button>
+      </el-input>
 
-        <!-- 操作 -->
-        <div class="card-header">
-          <el-button type="danger" @click="deleteAll">
-            全部删除
-          </el-button>
-          <el-button type="success" @click="exportCSV">
-            导出 CSV
-          </el-button>
-          <el-button type="primary" @click="importJson">
-            导入 CSV
-          </el-button>
-        </div>
-
-      </template>
-
-      <!-- 添加表单 -->
-      <el-form inline class="form">
-        <el-form-item>
-          <el-input v-model="newName" placeholder="姓名" clearable />
-        </el-form-item>
-
-        <el-form-item>
-          <el-input v-model="newPhone" placeholder="电话" clearable />
-        </el-form-item>
-
-        <el-form-item>
-          <el-input v-model="newLevel" placeholder="等级" clearable />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button type="primary" @click="addNew">
-            添加会员
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <!-- 表格 -->
-      <el-table :data="members" stripe border style="width: 100%; margin-top: 20px">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="姓名" />
-        <el-table-column prop="phone" label="电话" />
-        <el-table-column prop="level" label="等级" />
-
-        <el-table-column label="操作" width="120">
-          <template #default="{ row }">
-            <el-button
-              type="danger"
-              size="small"
-              @click="deleteOne(row.id)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 🔥 分页 -->
-      <div style="margin-top: 20px; text-align: right">
-        <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :total="total"
-          layout="total, sizes, prev, pager, next, jumper" :page-sizes="[5, 10, 20, 50]"
-          @current-change="handlePageChange"
-          @size-change="handleSizeChange" />
+      <div class="right-buttons">
+        <el-button type="success" @click="handleImport">导入CSV</el-button>
+        <el-button type="primary" @click="handleExport">导出CSV</el-button>
+        <el-button type="danger" :disabled="!multipleSelection.length" @click="handleBatchDelete">
+          批量删除
+        </el-button>
+        <el-button type="danger" @click="handleDeleteAll">
+          全部删除
+        </el-button>
       </div>
+    </div>
 
+    <!-- 表格 -->
+    <el-table :data="tableData" border style="width: 100%" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="55" />
 
-    </el-card>
+      <el-table-column prop="id" label="ID" width="80" />
+
+      <el-table-column prop="name" label="姓名" />
+
+      <el-table-column prop="phone" label="手机号" />
+
+      <el-table-column prop="type" label="类型">
+        <template #default="{ row }">
+          <el-tag :type="row.type === MEMBER_TYPE.SAVING ? 'warning' : 'success'">
+            {{ row.type === MEMBER_TYPE.SAVING ? "储值卡" : "会员卡" }}
+          </el-tag>
+        </template>
+      </el-table-column>
+
+      <el-table-column prop="balance" label="余额" />
+
+      <el-table-column prop="created_at" label="创建时间" />
+
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button
+            size="small"
+            type="danger"
+            @click="handleDelete(row.id)">
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 分页 -->
+    <div class="pagination">
+      <el-pagination background layout="prev, pager, next, total" :total="total" :page-size="pageSize"
+        v-model:current-page="currentPage" @current-change="loadData" />
+    </div>
   </div>
 </template>
 
+
+
 <style scoped>
-.container {
-  padding: 30px;
+.member-container {
+  padding: 20px;
 }
 
-.card-header {
+.toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  margin-bottom: 15px;
 }
 
-.footer {
+.right-buttons>* {
+  margin-left: 10px;
+}
+
+.pagination {
   margin-top: 20px;
-  display: flex;
-  gap: 10px;
+  text-align: right;
 }
 </style>

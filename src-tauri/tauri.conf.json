@@ -15,7 +15,9 @@
         "label": "main",
         "title": "领尚造型会员管理",
         "width": 1000,
-        "height": 750
+        "height": 750,
+        "minWidth": 1000,
+        "minHeight": 750
       }
     ],
     "security": {

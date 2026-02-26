@@ -7,9 +7,9 @@ const routes = [
     component: () => import("../pages/Home.vue"),
   },
   {
-    path: "/about",
-    name: "About",
-    component: () => import("../pages/About.vue"),
+    path: "/consume",
+    name: "Consume",
+    component: () => import("../pages/Consume.vue"),
   },
   {
     path: "/member-list",
@@ -17,9 +17,14 @@ const routes = [
     component: () => import("../pages/MemberList.vue"),
   },
   {
-    path: "/consume",
-    name: "Consume",
-    component: () => import("../pages/Consume.vue"),
+    path: "/add-member",
+    name: "AddMember",
+    component: () => import("../pages/AddMember.vue"),
+  },
+  {
+    path: "/about",
+    name: "About",
+    component: () => import("../pages/About.vue"),
   },
 ]
 
