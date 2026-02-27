@@ -37,6 +37,7 @@ function openGithub() {
           <li>✔ 自动扣费与余额计算</li>
           <li>✔ CSV 数据导入导出</li>
           <li>✔ 本地 SQLite 数据存储</li>
+          <li>✔ 三态主题切换（白天/黑夜/跟随系统）</li>
         </ul>
       </section>
 

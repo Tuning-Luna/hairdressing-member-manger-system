@@ -122,12 +122,15 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f5f7fa;
+  background-color: var(--el-bg-color-page);
+  transition: background-color 0.3s ease;
 }
 
 .consume-card {
   width: 500px;
   border-radius: 12px;
+  background-color: var(--el-bg-color);
+  transition: background-color 0.3s ease;
 }
 
 .header-title {
