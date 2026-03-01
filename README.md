@@ -1,7 +1,17 @@
-# Tauri + Vue + TypeScript
+## Hair Dress Member System
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This project is based on Tauri + Vue3 + Typescript + Element-Plus + SQLite.
 
-## Recommended IDE Setup
+It's used for managnig hairdresser member.
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+
+## Core function
+
+- CURD for member.
+- management and distinction between store value card and membership card.
+- import and export SQL as CSV data structure.
+- local SQLite as database.
+- three modes change (light/dark/follow system) .
+- consume and balance calculation.
+
